@@ -1,0 +1,8 @@
+pymilvus
+ollama
+openai
+pymysql
+sqlalchemy
+fastapi
+uvicorn
+python-multipart

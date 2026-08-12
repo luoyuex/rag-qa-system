@@ -1,0 +1,13 @@
+:root {
+  font: 14px/145% -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1f2328;
+  background: #f5f6f8;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}

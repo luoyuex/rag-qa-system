@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Uploaded documents (runtime data, not source)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Env files
+.env
+.env.local
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
