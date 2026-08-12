@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.auth import get_current_user
 from app.db import get_db, SessionLocal
 from app.models import ChatSession, ChatMessage
 from app.schemas import ChatSessionOut, ChatMessageOut, ChatMessageIn
 from app.services import chat_service
 
-router = APIRouter(prefix="/api/chat", tags=["chat"])
+router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(get_current_user)])
 
 
 # ============================================================

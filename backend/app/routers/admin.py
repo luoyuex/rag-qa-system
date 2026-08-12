@@ -4,6 +4,7 @@ from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPE
 from sqlalchemy.orm import Session
 
 from app import config
+from app.auth import require_role
 from app.db import get_db, SessionLocal
 from app.models import Document, Setting
 from app.schemas import (
@@ -15,7 +16,11 @@ from app.schemas import (
 )
 from app.services import document_service
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/api/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_role("admin"))],
+)
 
 
 # ============================================================
@@ -117,11 +122,17 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)):
 # ============================================================
 
 MODEL_SETTING_KEYS = {
-    "provider": "chat_provider",
+    # 对话模型
+    "chat_provider": "chat_provider",
     "local_model": "chat_local_model",
     "online_base_url": "chat_online_base_url",
     "online_api_key": "chat_online_api_key",
     "online_model": "chat_online_model",
+    # Embedding 模型
+    "embedding_provider": "embedding_provider",
+    "embedding_model": "embedding_model",
+    "embedding_online_base_url": "embedding_online_base_url",
+    "embedding_online_api_key": "embedding_online_api_key",
 }
 
 
@@ -145,28 +156,40 @@ def _set_setting_value(db: Session, key: str, value: str):
 @router.get("/model-settings", response_model=ModelSettingsOut)
 def get_model_settings(db: Session = Depends(get_db)):
 
-    provider = _get_setting_value(db, MODEL_SETTING_KEYS["provider"], config.DEFAULT_CHAT_PROVIDER)
+    # 对话模型
+    chat_provider = _get_setting_value(db, MODEL_SETTING_KEYS["chat_provider"], config.DEFAULT_CHAT_PROVIDER)
     local_model = _get_setting_value(db, MODEL_SETTING_KEYS["local_model"], config.CHAT_MODEL)
     online_base_url = _get_setting_value(db, MODEL_SETTING_KEYS["online_base_url"], config.DEFAULT_ONLINE_BASE_URL)
     online_api_key = _get_setting_value(db, MODEL_SETTING_KEYS["online_api_key"], config.DEFAULT_ONLINE_API_KEY)
     online_model = _get_setting_value(db, MODEL_SETTING_KEYS["online_model"], config.DEFAULT_ONLINE_MODEL)
 
+    # Embedding 模型
+    embedding_provider = _get_setting_value(db, MODEL_SETTING_KEYS["embedding_provider"], "local")
+    embedding_model = _get_setting_value(db, MODEL_SETTING_KEYS["embedding_model"], config.EMBEDDING_MODEL)
+    embedding_online_base_url = _get_setting_value(db, MODEL_SETTING_KEYS["embedding_online_base_url"], config.DEFAULT_ONLINE_BASE_URL)
+    embedding_online_api_key = _get_setting_value(db, MODEL_SETTING_KEYS["embedding_online_api_key"], config.DEFAULT_ONLINE_API_KEY)
+
     return ModelSettingsOut(
-        provider=provider,
+        chat_provider=chat_provider,
         local_model=local_model,
         online_base_url=online_base_url,
         online_model=online_model,
         has_online_api_key=bool(online_api_key),
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        embedding_online_base_url=embedding_online_base_url,
+        has_embedding_online_api_key=bool(embedding_online_api_key),
     )
 
 
 @router.put("/model-settings", response_model=ModelSettingsOut)
 def update_model_settings(payload: ModelSettingsUpdate, db: Session = Depends(get_db)):
 
-    if payload.provider not in ("local", "online"):
-        raise HTTPException(400, "provider 只能是 local 或 online")
-
-    _set_setting_value(db, MODEL_SETTING_KEYS["provider"], payload.provider)
+    # 对话模型
+    if payload.chat_provider is not None:
+        if payload.chat_provider not in ("local", "online"):
+            raise HTTPException(400, "chat_provider 只能是 local 或 online")
+        _set_setting_value(db, MODEL_SETTING_KEYS["chat_provider"], payload.chat_provider)
 
     if payload.local_model is not None:
         _set_setting_value(db, MODEL_SETTING_KEYS["local_model"], payload.local_model)
@@ -177,9 +200,23 @@ def update_model_settings(payload: ModelSettingsUpdate, db: Session = Depends(ge
     if payload.online_model is not None:
         _set_setting_value(db, MODEL_SETTING_KEYS["online_model"], payload.online_model)
 
-    # api_key 留空表示不修改，避免每次保存都要求重新输入
     if payload.online_api_key:
         _set_setting_value(db, MODEL_SETTING_KEYS["online_api_key"], payload.online_api_key)
+
+    # Embedding 模型
+    if payload.embedding_provider is not None:
+        if payload.embedding_provider not in ("local", "online"):
+            raise HTTPException(400, "embedding_provider 只能是 local 或 online")
+        _set_setting_value(db, MODEL_SETTING_KEYS["embedding_provider"], payload.embedding_provider)
+
+    if payload.embedding_model is not None:
+        _set_setting_value(db, MODEL_SETTING_KEYS["embedding_model"], payload.embedding_model)
+
+    if payload.embedding_online_base_url is not None:
+        _set_setting_value(db, MODEL_SETTING_KEYS["embedding_online_base_url"], payload.embedding_online_base_url)
+
+    if payload.embedding_online_api_key:
+        _set_setting_value(db, MODEL_SETTING_KEYS["embedding_online_api_key"], payload.embedding_online_api_key)
 
     db.commit()
 

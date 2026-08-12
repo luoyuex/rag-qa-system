@@ -20,9 +20,12 @@ backend/
 │   ├── main.py           # FastAPI 入口，挂载路由、CORS、启动时建表
 │   ├── config.py         # 环境变量与默认配置
 │   ├── db.py              # SQLAlchemy 引擎与 Session
-│   ├── models.py          # 数据表模型（会话、消息、文档、设置）
+│   ├── models.py          # 数据表模型（会话、消息、文档、设置、用户）
 │   ├── schemas.py         # Pydantic 请求/响应模型
+│   ├── auth.py             # 密码哈希、JWT 生成/校验、鉴权依赖
 │   ├── routers/
+│   │   ├── auth.py         # 登录、当前用户接口
+│   │   ├── users.py        # 用户管理接口（仅 admin）
 │   │   ├── chat.py        # 会话与问答相关接口
 │   │   └── admin.py       # 知识库文档与系统配置相关接口
 │   └── services/           # 业务逻辑（RAG 编排、文档处理、分块、向量化等）
@@ -61,6 +64,10 @@ backend/
 | `CHUNK_OVERLAP` | 分块重叠长度 | `120` |
 | `UPLOAD_DIR` | 上传文件存储目录 | `uploads/` |
 | `DEFAULT_CONTEXT_ROUNDS` | 默认携带的历史对话轮数 | `5` |
+| `JWT_SECRET` | JWT 签名密钥，生产环境必须修改 | `change-me-in-production` |
+| `JWT_EXPIRE_MINUTES` | JWT 有效期（分钟） | `480` |
+| `INITIAL_ADMIN_USERNAME` | 首次启动、`users` 表为空时自动创建的管理员用户名 | `admin` |
+| `INITIAL_ADMIN_PASSWORD` | 首次启动自动创建管理员时使用的密码，留空则不自动创建 | - |
 
 > 对话模型、上下文轮数等设置也可在服务启动后，通过管理接口在运行时动态修改（持久化到数据库）。
 
@@ -78,7 +85,23 @@ uvicorn app.main:app --reload
 
 ## 主要接口
 
-### 问答相关（`/api/chat`）
+### 鉴权（`/api/auth`）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/auth/login` | 用户名密码登录，返回 JWT access token |
+| GET | `/api/auth/me` | 获取当前登录用户信息（需带 `Authorization: Bearer <token>`） |
+
+### 用户管理（`/api/admin/users`，仅 admin 可访问）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/admin/users` | 获取用户列表 |
+| POST | `/api/admin/users` | 创建用户（用户名、密码、角色、部门） |
+| PUT | `/api/admin/users/{user_id}` | 修改用户（密码、角色、部门、启用/停用） |
+| DELETE | `/api/admin/users/{user_id}` | 删除用户 |
+
+### 问答相关（`/api/chat`，需登录）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -86,7 +109,7 @@ uvicorn app.main:app --reload
 | GET | `/api/chat/sessions/{session_id}/messages` | 获取该会话的历史消息 |
 | POST | `/api/chat/sessions/{session_id}/messages` | 发送问题，以流式（`text/plain`）方式返回回答，内部会先在向量库中检索相关知识片段，再交由大模型生成回答 |
 
-### 知识库与配置管理（`/api/admin`）
+### 知识库与配置管理（`/api/admin`，仅 admin 可访问）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

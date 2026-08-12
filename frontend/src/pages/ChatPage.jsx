@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Input, Button, Tag, Alert, Space, Spin } from "antd";
+import { PlusOutlined, SendOutlined } from "@ant-design/icons";
 import { createSession, getMessages, sendMessageStream } from "../api";
 
 const SESSION_STORAGE_KEY = "rag_chat_session_id";
@@ -89,33 +91,49 @@ export default function ChatPage() {
   return (
     <div className="chat-page">
       <div className="chat-toolbar">
-        <span className="session-id">会话：{sessionId ? sessionId.slice(0, 8) : "..."}</span>
-        <button onClick={handleNewSession}>新建会话</button>
+        <Space>
+          <Tag color="blue">会话：{sessionId ? sessionId.slice(0, 8) : "..."}</Tag>
+        </Space>
+        <Button icon={<PlusOutlined />} onClick={handleNewSession}>
+          新建会话
+        </Button>
       </div>
 
       <div className="chat-messages">
         {messages.map((m, i) => (
           <div key={i} className={`chat-bubble ${m.role}`}>
-            <div className="chat-role">{m.role === "user" ? "我" : "AI"}</div>
-            <div className="chat-content">{m.content || (sending && i === messages.length - 1 ? "思考中…" : "")}</div>
+            <div className="chat-role">
+              <Tag color={m.role === "user" ? "blue" : "default"}>
+                {m.role === "user" ? "我" : "AI"}
+              </Tag>
+            </div>
+            <div className="chat-content">
+              {m.content || (sending && i === messages.length - 1 ? <Spin size="small" /> : "")}
+            </div>
           </div>
         ))}
         <div ref={bottomRef} />
       </div>
 
-      {error && <div className="chat-error">{error}</div>}
+      {error && <Alert type="error" message={error} showIcon className="chat-alert" />}
 
       <div className="chat-input-bar">
-        <textarea
+        <Input.TextArea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="输入问题，Enter 发送，Shift+Enter 换行"
-          rows={2}
+          autoSize={{ minRows: 1, maxRows: 4 }}
         />
-        <button onClick={handleSend} disabled={sending || !input.trim()}>
-          {sending ? "发送中..." : "发送"}
-        </button>
+        <Button
+          type="primary"
+          icon={<SendOutlined />}
+          onClick={handleSend}
+          disabled={sending || !input.trim()}
+          loading={sending}
+        >
+          发送
+        </Button>
       </div>
     </div>
   );

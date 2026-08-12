@@ -19,3 +19,10 @@ backend/uploads/*
 .vscode/
 .idea/
 .DS_Store
+
+# Internal docs (not for public repo)
+docs/
+
+
+.agents/
+.claude/

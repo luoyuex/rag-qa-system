@@ -1,50 +1,79 @@
-* {
-  box-sizing: border-box;
-}
+/* ============================================================
+   全局布局 — antd 无法覆盖的部分
+   ============================================================ */
 
-.app {
-  display: flex;
-  flex-direction: column;
+.app-layout {
   min-height: 100vh;
 }
 
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 24px;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e5e9;
-}
-
-.app-header h1 {
-  font-size: 18px;
-  margin: 0;
-}
-
-.app-header nav button {
-  margin-left: 8px;
-  padding: 8px 16px;
-  border: 1px solid #d7dbe0;
+  padding: 0 24px;
   background: #fff;
-  border-radius: 6px;
-  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
-.app-header nav button.active {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
+.app-title {
+  font-size: 18px;
+  margin-right: 24px;
+  white-space: nowrap;
 }
 
-.app-main {
+.app-menu {
   flex: 1;
+  border-bottom: none;
+  line-height: 62px;
+}
+
+.app-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.current-user {
+  font-size: 13px;
+  color: #666;
+}
+
+.app-content {
   display: flex;
   justify-content: center;
   padding: 24px;
+  background: #f5f5f5;
+  min-height: calc(100vh - 64px);
 }
 
-/* ---------------- Chat ---------------- */
+.spin-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+/* ============================================================
+   登录页
+   ============================================================ */
+
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 64px);
+}
+
+.login-card {
+  width: 380px;
+}
+
+/* ============================================================
+   聊天页 — 气泡样式 antd 没有对应组件，需自定义
+   ============================================================ */
 
 .chat-page {
   width: 100%;
@@ -52,10 +81,10 @@
   display: flex;
   flex-direction: column;
   background: #fff;
-  border: 1px solid #e2e5e9;
-  border-radius: 10px;
+  border-radius: 8px;
   height: 78vh;
   overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .chat-toolbar {
@@ -63,17 +92,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  border-bottom: 1px solid #e2e5e9;
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.chat-toolbar button {
-  padding: 4px 10px;
-  border: 1px solid #d7dbe0;
-  border-radius: 6px;
-  background: #fff;
-  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .chat-messages {
@@ -94,20 +113,18 @@
 }
 
 .chat-bubble .chat-role {
-  font-size: 11px;
-  opacity: 0.6;
   margin-bottom: 4px;
 }
 
 .chat-bubble.user {
   align-self: flex-end;
-  background: #2563eb;
+  background: #1677ff;
   color: #fff;
 }
 
 .chat-bubble.assistant {
   align-self: flex-start;
-  background: #f1f3f5;
+  background: #f0f0f0;
   color: #1f2328;
 }
 
@@ -115,40 +132,20 @@
   display: flex;
   gap: 8px;
   padding: 12px;
-  border-top: 1px solid #e2e5e9;
+  border-top: 1px solid #f0f0f0;
 }
 
-.chat-input-bar textarea {
+.chat-input-bar .ant-input-textarea {
   flex: 1;
-  resize: none;
-  border: 1px solid #d7dbe0;
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-family: inherit;
-  font-size: 14px;
 }
 
-.chat-input-bar button {
-  padding: 0 18px;
-  border: none;
-  border-radius: 8px;
-  background: #2563eb;
-  color: #fff;
-  cursor: pointer;
+.chat-alert {
+  margin: 0 16px;
 }
 
-.chat-input-bar button:disabled {
-  background: #9db6e8;
-  cursor: not-allowed;
-}
-
-.chat-error {
-  color: #d92d20;
-  padding: 8px 16px;
-  font-size: 13px;
-}
-
-/* ---------------- Admin ---------------- */
+/* ============================================================
+   管理页
+   ============================================================ */
 
 .admin-page {
   width: 100%;
@@ -160,148 +157,20 @@
 
 .admin-section {
   background: #fff;
-  border: 1px solid #e2e5e9;
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 20px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .admin-section h2 {
   margin-top: 0;
-  font-size: 16px;
-}
-
-.upload-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   margin-bottom: 16px;
-}
-
-.doc-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-.doc-table th,
-.doc-table td {
-  text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid #eef0f2;
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  background: #eef0f2;
-}
-
-.status-badge.completed {
-  background: #dcfce7;
-  color: #15803d;
-}
-
-.status-badge.failed {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.status-badge.pending,
-.status-badge.chunking,
-.status-badge.embedding {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.error-message {
-  font-size: 12px;
-  color: #d92d20;
-  margin-top: 4px;
-}
-
-.empty-row {
-  text-align: center;
-  color: #9aa1ab;
-  padding: 20px;
-}
-
-.doc-table button {
-  border: 1px solid #d7dbe0;
-  background: #fff;
-  border-radius: 6px;
-  padding: 4px 10px;
-  cursor: pointer;
-}
-
-.settings-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.settings-bar input[type="number"] {
-  width: 70px;
-  margin-left: 8px;
-  padding: 4px 8px;
-  border: 1px solid #d7dbe0;
-  border-radius: 6px;
-}
-
-.settings-bar button {
-  padding: 6px 16px;
-  border: none;
-  border-radius: 6px;
-  background: #2563eb;
-  color: #fff;
-  cursor: pointer;
+  font-size: 16px;
 }
 
 .model-settings {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-width: 480px;
-}
-
-.radio-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.model-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-left: 24px;
-}
-
-.model-field label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.model-field input {
-  padding: 6px 8px;
-  border: 1px solid #d7dbe0;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #1f2328;
-}
-
-.model-settings > button {
-  align-self: flex-start;
-  padding: 6px 16px;
-  border: none;
-  border-radius: 6px;
-  background: #2563eb;
-  color: #fff;
-  cursor: pointer;
-  margin-top: 4px;
+  gap: 12px;
+  max-width: 560px;
 }

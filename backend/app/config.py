@@ -54,3 +54,14 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", str(os.path.join(os.path.dirname(__file__),
 # ============================================================
 
 DEFAULT_CONTEXT_ROUNDS = int(os.getenv("DEFAULT_CONTEXT_ROUNDS", "5"))
+
+# ============================================================
+# 鉴权
+# ============================================================
+
+JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production")
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
+
+# 首次启动、users 表为空时自动创建的管理员账号
+INITIAL_ADMIN_USERNAME = os.getenv("INITIAL_ADMIN_USERNAME", "admin")
+INITIAL_ADMIN_PASSWORD = os.getenv("INITIAL_ADMIN_PASSWORD", "admin123")

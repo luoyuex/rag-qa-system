@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, Enum, Boolean
 from sqlalchemy.orm import relationship
 
 from app.db import Base
@@ -60,3 +60,16 @@ class Setting(Base):
 
     key = Column(String(64), primary_key=True)
     value = Column(String(255), nullable=False)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String(64), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    display_name = Column(String(64), nullable=True)
+    role = Column(String(16), nullable=False, default="user")  # admin / user
+    department = Column(String(64), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

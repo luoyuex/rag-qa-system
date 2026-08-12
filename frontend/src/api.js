@@ -1,10 +1,45 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const TOKEN_STORAGE_KEY = "rag_auth_token";
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function setToken(token) {
+  localStorage.setItem(TOKEN_STORAGE_KEY, token);
+}
+
+export function clearToken() {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+// 未登录 / 登录状态失效时触发，由 App 负责跳回登录页
+let onUnauthorized = null;
+
+export function setUnauthorizedHandler(handler) {
+  onUnauthorized = handler;
+}
+
+function authHeaders() {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+      ...options.headers,
+    },
   });
+
+  if (res.status === 401) {
+    clearToken();
+    if (onUnauthorized) onUnauthorized();
+    throw new Error("登录状态已失效，请重新登录");
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -12,6 +47,52 @@ async function request(path, options = {}) {
   }
 
   return res;
+}
+
+// ============================================================
+// 鉴权
+// ============================================================
+
+export async function login(username, password) {
+  const res = await request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+  return res.json();
+}
+
+export async function getCurrentUser() {
+  const res = await request("/api/auth/me");
+  return res.json();
+}
+
+// ============================================================
+// 用户管理（仅管理员）
+// ============================================================
+
+export async function listUsers() {
+  const res = await request("/api/admin/users");
+  return res.json();
+}
+
+export async function createUser(payload) {
+  const res = await request("/api/admin/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+export async function updateUser(userId, payload) {
+  const res = await request(`/api/admin/users/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+export async function deleteUser(userId) {
+  await request(`/api/admin/users/${userId}`, { method: "DELETE" });
 }
 
 // ============================================================
@@ -62,7 +143,14 @@ export async function uploadDocument(file) {
   const res = await fetch(`${API_BASE}/api/admin/documents`, {
     method: "POST",
     body: formData,
+    headers: authHeaders(),
   });
+
+  if (res.status === 401) {
+    clearToken();
+    if (onUnauthorized) onUnauthorized();
+    throw new Error("登录状态已失效，请重新登录");
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
