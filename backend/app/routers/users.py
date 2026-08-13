@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import hash_password, require_role
 from app.db import get_db
-from app.models import User
+from app.models import Department, User
 from app.schemas import UserCreateIn, UserOut, UserUpdateIn
 
 router = APIRouter(
@@ -29,13 +29,15 @@ def create_user(payload: UserCreateIn, db: Session = Depends(get_db)):
 
     if db.query(User).filter(User.username == payload.username).first() is not None:
         raise HTTPException(400, "用户名已存在")
+    if payload.department_id and db.get(Department, payload.department_id) is None:
+        raise HTTPException(404, "部门不存在")
 
     user = User(
         username=payload.username,
         password_hash=hash_password(payload.password),
         display_name=payload.display_name,
         role=payload.role,
-        department=payload.department,
+        department_id=payload.department_id,
     )
 
     db.add(user)
@@ -64,8 +66,10 @@ def update_user(user_id: str, payload: UserUpdateIn, db: Session = Depends(get_d
     if payload.display_name is not None:
         user.display_name = payload.display_name
 
-    if payload.department is not None:
-        user.department = payload.department
+    if payload.department_id is not None:
+        if payload.department_id and db.get(Department, payload.department_id) is None:
+            raise HTTPException(404, "部门不存在")
+        user.department_id = payload.department_id or None
 
     if payload.is_active is not None:
         user.is_active = payload.is_active

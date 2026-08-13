@@ -9,6 +9,7 @@ from app.db import get_db, SessionLocal
 from app.models import Agent, ChatSession, ChatMessage, KnowledgeBase, User
 from app.schemas import ChatSessionOut, ChatMessageOut, ChatMessageIn, ChatSessionIn
 from app.services import chat_service
+from app.services.agent_access import can_access_agent
 
 router = APIRouter(prefix="/api/chat", tags=["chat"], dependencies=[Depends(get_current_user)])
 
@@ -18,6 +19,8 @@ def _get_user_session(db: Session, session_id: str, user: User) -> ChatSession:
     session = db.get(ChatSession, session_id)
     if session is None or session.user_id != user.id:
         raise HTTPException(404, "会话不存在")
+    if not can_access_agent(db, user, session.agent_id):
+        raise HTTPException(403, "当前部门无权访问该 Agent")
     return session
 
 
@@ -30,7 +33,13 @@ def list_sessions(agent_id: str = None, user: User = Depends(get_current_user), 
 
     query = db.query(ChatSession).filter(ChatSession.user_id == user.id)
     if agent_id:
+        if not can_access_agent(db, user, agent_id):
+            raise HTTPException(403, "当前部门无权访问该 Agent")
         query = query.filter(ChatSession.agent_id == agent_id)
+    elif user.role != "admin":
+        from app.services.agent_access import accessible_agents_query
+        accessible_ids = [item.id for item in accessible_agents_query(db, user).all()]
+        query = query.filter(ChatSession.agent_id.in_(accessible_ids))
     return query.order_by(ChatSession.created_at.desc()).all()
 
 
@@ -50,6 +59,8 @@ def create_session(payload: ChatSessionIn, user: User = Depends(get_current_user
     )
     if agent is None:
         raise HTTPException(404, "Agent 不存在或已停用")
+    if not can_access_agent(db, user, agent.id):
+        raise HTTPException(403, "当前部门无权访问该 Agent")
     session = ChatSession(user_id=user.id, agent_id=agent.id)
 
     db.add(session)

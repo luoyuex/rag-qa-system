@@ -26,3 +26,4 @@ docs/
 
 .agents/
 .claude/
+migrations/

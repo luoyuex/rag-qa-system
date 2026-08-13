@@ -2,10 +2,18 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, Enum, Boolean
+from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, Enum, Boolean, Table
 from sqlalchemy.orm import relationship
 
 from app.db import Base
+
+
+department_agents = Table(
+    "department_agents",
+    Base.metadata,
+    Column("department_id", String(36), ForeignKey("departments.id"), primary_key=True),
+    Column("agent_id", String(36), ForeignKey("agents.id"), primary_key=True),
+)
 
 
 class DocumentStatus(str, enum.Enum):
@@ -77,6 +85,25 @@ class Agent(Base):
 
     knowledge_base = relationship("KnowledgeBase", back_populates="agents")
     sessions = relationship("ChatSession", back_populates="agent")
+    departments = relationship("Department", secondary=department_agents, back_populates="agents")
+
+
+class Department(Base):
+    __tablename__ = "departments"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(100), unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    users = relationship("User", back_populates="department")
+    agents = relationship("Agent", secondary=department_agents, back_populates="departments")
+
+    @property
+    def agent_ids(self):
+        return [agent.id for agent in self.agents]
 
 
 class ChatMessage(Base):
@@ -106,6 +133,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     display_name = Column(String(64), nullable=True)
     role = Column(String(16), nullable=False, default="user")  # admin / user
-    department = Column(String(64), nullable=True)
+    department_id = Column(String(36), ForeignKey("departments.id"), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    department = relationship("Department", back_populates="users")

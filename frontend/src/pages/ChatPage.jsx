@@ -216,7 +216,11 @@ export default function ChatPage() {
             {messages.map((m, i) => (
               <div key={i} className={`chat-row ${m.role}`}>
                 {m.role === "assistant" && (
-                  <Avatar className="chat-avatar assistant" icon={<RobotOutlined />} />
+                  <Avatar
+                    className="chat-avatar assistant"
+                    src={selectedAgent?.avatar || undefined}
+                    icon={!selectedAgent?.avatar ? <RobotOutlined /> : undefined}
+                  />
                 )}
                 <div className={`chat-content ${m.role}`}>
                   {m.content || (sending && i === messages.length - 1 ? (

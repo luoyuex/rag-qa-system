@@ -7,8 +7,8 @@ from sqlalchemy import inspect, text
 from app import config
 from app.auth import hash_password
 from app.db import Base, SessionLocal, engine
-from app.models import Agent, KnowledgeBase, User
-from app.routers import agents, auth, chat, admin, users
+from app.models import Agent, Department, KnowledgeBase, User
+from app.routers import agents, auth, chat, admin, departments, users
 from app.services.milvus_client import ensure_collection
 
 Base.metadata.create_all(bind=engine)
@@ -24,9 +24,39 @@ def _ensure_legacy_columns():
         session_columns = {column["name"] for column in inspector.get_columns("chat_sessions")}
         if "agent_id" not in session_columns:
             connection.execute(text("ALTER TABLE chat_sessions ADD COLUMN agent_id VARCHAR(36) NULL"))
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        if "department_id" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN department_id VARCHAR(36) NULL"))
 
 
 _ensure_legacy_columns()
+
+
+def _migrate_legacy_departments():
+    inspector = inspect(engine)
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
+    if "department" not in user_columns:
+        return
+    db = SessionLocal()
+    try:
+        names = [row[0] for row in db.execute(text(
+            "SELECT DISTINCT department FROM users WHERE department IS NOT NULL AND department <> ''"
+        )).all()]
+        for name in names:
+            department = db.query(Department).filter(Department.name == name).first()
+            if department is None:
+                department = Department(name=name, description="由旧用户部门字段自动迁移")
+                db.add(department)
+                db.flush()
+            db.execute(text(
+                "UPDATE users SET department_id = :department_id WHERE department = :name AND department_id IS NULL"
+            ), {"department_id": department.id, "name": name})
+        db.commit()
+    finally:
+        db.close()
+
+
+_migrate_legacy_departments()
 
 
 def _create_initial_admin():
@@ -104,6 +134,7 @@ app.include_router(chat.router)
 app.include_router(admin.router)
 app.include_router(users.router)
 app.include_router(agents.router)
+app.include_router(departments.router)
 
 
 @app.get("/health")

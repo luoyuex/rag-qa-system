@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Table, Button, Upload, Avatar, Tag, Popconfirm, InputNumber, Radio, Input,
-  Modal, Form, Select, Alert, Space, message,
+  Modal, Form, Select, Alert, Space, Menu, message,
 } from "antd";
 import {
   UploadOutlined, PlusOutlined, DeleteOutlined, StopOutlined, CheckCircleOutlined,
@@ -14,6 +14,7 @@ import {
   listKnowledgeBases, createKnowledgeBase, updateKnowledgeBase, deleteKnowledgeBase,
   listAdminAgents, createAgent, updateAgent, deleteAgent,
   uploadAgentAvatar,
+  listDepartments, createDepartment, updateDepartment, deleteDepartment,
 } from "../api";
 
 const STATUS_TAG = {
@@ -39,6 +40,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState([]);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
   const [userForm] = Form.useForm();
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [agents, setAgents] = useState([]);
@@ -50,6 +52,11 @@ export default function AdminPage() {
   const [uploadingAgentAvatar, setUploadingAgentAvatar] = useState(false);
   const [knowledgeBaseForm] = Form.useForm();
   const [agentForm] = Form.useForm();
+  const [departments, setDepartments] = useState([]);
+  const [departmentModalOpen, setDepartmentModalOpen] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState(null);
+  const [departmentForm] = Form.useForm();
+  const [adminMenu, setAdminMenu] = useState("knowledge");
   const pollTimerRef = useRef(null);
 
   useEffect(() => {
@@ -59,6 +66,7 @@ export default function AdminPage() {
     refreshUsers();
     refreshKnowledgeBases();
     refreshAgents();
+    refreshDepartments();
     return () => clearTimeout(pollTimerRef.current);
   }, []);
 
@@ -108,6 +116,27 @@ export default function AdminPage() {
 
   async function refreshAgents() {
     try { setAgents(await listAdminAgents()); } catch (err) { setError(err.message); }
+  }
+
+  async function refreshDepartments() {
+    try { setDepartments(await listDepartments()); } catch (err) { setError(err.message); }
+  }
+
+  function openDepartmentModal(item = null) {
+    setEditingDepartment(item);
+    departmentForm.setFieldsValue(item || { name: "", description: "", agent_ids: [], is_active: true });
+    setDepartmentModalOpen(true);
+  }
+
+  async function saveDepartment() {
+    try {
+      const values = await departmentForm.validateFields();
+      if (editingDepartment) await updateDepartment(editingDepartment.id, values);
+      else await createDepartment(values);
+      setDepartmentModalOpen(false);
+      await refreshDepartments();
+      message.success("部门已保存");
+    } catch (err) { if (!err.errorFields) message.error(err.message); }
   }
 
   useEffect(() => {
@@ -288,7 +317,20 @@ export default function AdminPage() {
   }
 
   function openUserModal() {
+    setEditingUser(null);
     userForm.resetFields();
+    setUserModalOpen(true);
+  }
+
+  function openEditUserModal(user) {
+    setEditingUser(user);
+    userForm.setFieldsValue({
+      username: user.username,
+      display_name: user.display_name,
+      role: user.role,
+      department_id: user.department_id,
+      password: "",
+    });
     setUserModalOpen(true);
   }
 
@@ -297,10 +339,18 @@ export default function AdminPage() {
       const values = await userForm.validateFields();
       setSavingUser(true);
       setError("");
-      await createUser(values);
+      if (editingUser) {
+        const { username, ...payload } = values;
+        void username;
+        if (!payload.password) delete payload.password;
+        payload.department_id = payload.department_id || "";
+        await updateUser(editingUser.id, payload);
+      } else {
+        await createUser(values);
+      }
       setUserModalOpen(false);
       await refreshUsers();
-      message.success("用户创建成功");
+      message.success(editingUser ? "用户已更新" : "用户创建成功");
     } catch (err) {
       if (err.errorFields) return;
       setError(err.message);
@@ -345,7 +395,7 @@ export default function AdminPage() {
         </Tag>
       ),
     },
-    { title: "部门", dataIndex: "department", key: "department", render: (v) => v || "-" },
+    { title: "部门", dataIndex: "department_id", key: "department_id", render: (id) => departments.find((item) => item.id === id)?.name || "-" },
     {
       title: "状态",
       dataIndex: "is_active",
@@ -359,6 +409,7 @@ export default function AdminPage() {
       key: "action",
       render: (_, record) => (
         <Space>
+          <Button size="small" onClick={() => openEditUserModal(record)}>编辑</Button>
           <Button
             size="small"
             icon={record.is_active ? <StopOutlined /> : <CheckCircleOutlined />}
@@ -378,7 +429,21 @@ export default function AdminPage() {
     <div className="admin-page">
       {error && <Alert type="error" message={error} showIcon closable onClose={() => setError("")} style={{ marginBottom: 16 }} />}
 
-      <section className="admin-section">
+      <Menu
+        mode="horizontal"
+        selectedKeys={[adminMenu]}
+        onClick={({ key }) => setAdminMenu(key)}
+        items={[
+          { key: "knowledge", label: "知识库与文档" },
+          { key: "agents", label: "Agent 管理" },
+          { key: "departments", label: "部门管理" },
+          { key: "users", label: "用户管理" },
+          { key: "settings", label: "系统设置" },
+        ]}
+        className="admin-menu"
+      />
+
+      {adminMenu === "knowledge" && <section className="admin-section">
         <h2>知识库管理</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => openKnowledgeBaseModal()}>新建知识库</Button>
         <Table dataSource={knowledgeBases} rowKey="id" pagination={false} style={{ marginTop: 16 }} columns={[
@@ -387,9 +452,9 @@ export default function AdminPage() {
           { title: "状态", dataIndex: "is_active", render: (value) => <Tag color={value ? "green" : "default"}>{value ? "启用" : "停用"}</Tag> },
           { title: "操作", render: (_, item) => <Space><Button size="small" onClick={() => openKnowledgeBaseModal(item)}>编辑</Button><Popconfirm title="确定删除该知识库吗？" onConfirm={async () => { await deleteKnowledgeBase(item.id); await refreshKnowledgeBases(); }}><Button danger size="small">删除</Button></Popconfirm></Space> },
         ]} />
-      </section>
+      </section>}
 
-      <section className="admin-section">
+      {adminMenu === "agents" && <section className="admin-section">
         <h2>Agent 管理</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => openAgentModal()}>新建 Agent</Button>
         <Table dataSource={agents} rowKey="id" pagination={false} style={{ marginTop: 16 }} columns={[
@@ -398,10 +463,22 @@ export default function AdminPage() {
           { title: "状态", dataIndex: "is_active", render: (value) => <Tag color={value ? "green" : "default"}>{value ? "启用" : "停用"}</Tag> },
           { title: "操作", render: (_, item) => <Space><Button size="small" onClick={() => openAgentModal(item)}>编辑</Button><Popconfirm title="确定删除该 Agent 吗？" onConfirm={async () => { await deleteAgent(item.id); await refreshAgents(); }}><Button danger size="small">删除</Button></Popconfirm></Space> },
         ]} />
-      </section>
+      </section>}
+
+      {adminMenu === "departments" && <section className="admin-section">
+        <h2>部门管理</h2>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => openDepartmentModal()}>新建部门</Button>
+        <Table dataSource={departments} rowKey="id" pagination={false} style={{ marginTop: 16 }} columns={[
+          { title: "名称", dataIndex: "name" },
+          { title: "描述", dataIndex: "description", render: (value) => value || "-" },
+          { title: "可访问 Agent", dataIndex: "agent_ids", render: (ids) => <Space wrap>{ids.map((id) => <Tag key={id}>{agents.find((agent) => agent.id === id)?.name || id}</Tag>)}</Space> },
+          { title: "状态", dataIndex: "is_active", render: (value) => <Tag color={value ? "green" : "default"}>{value ? "启用" : "停用"}</Tag> },
+          { title: "操作", render: (_, item) => <Space><Button size="small" onClick={() => openDepartmentModal(item)}>编辑</Button><Popconfirm title="确定删除该部门吗？" onConfirm={async () => { await deleteDepartment(item.id); await refreshDepartments(); }}><Button danger size="small">删除</Button></Popconfirm></Space> },
+        ]} />
+      </section>}
 
       {/* 文档管理 */}
-      <section className="admin-section">
+      {adminMenu === "knowledge" && <section className="admin-section">
         <h2>文档管理</h2>
         <Select value={selectedKnowledgeBaseId || undefined} placeholder="选择知识库" options={knowledgeBases.map((item) => ({ value: item.id, label: item.name }))} onChange={setSelectedKnowledgeBaseId} style={{ width: 240, marginRight: 12 }} />
         <Upload
@@ -422,20 +499,20 @@ export default function AdminPage() {
           pagination={false}
           locale={{ emptyText: "暂无文档，先上传一个 .txt 文件" }}
         />
-      </section>
+      </section>}
 
       {/* 对话设置 */}
-      <section className="admin-section">
+      {adminMenu === "settings" && <section className="admin-section">
         <h2>对话设置</h2>
         <Space>
           <span>上下文轮数：</span>
           <InputNumber min={0} max={50} value={contextRounds} onChange={(v) => setContextRounds(v)} />
           <Button type="primary" loading={savingSettings} onClick={handleSaveSettings}>保存</Button>
         </Space>
-      </section>
+      </section>}
 
       {/* 模型设置 */}
-      <section className="admin-section">
+      {adminMenu === "settings" && <section className="admin-section">
         <h2>模型设置</h2>
         {modelSettings && (
           <div className="model-settings">
@@ -548,10 +625,10 @@ export default function AdminPage() {
             </Button>
           </div>
         )}
-      </section>
+      </section>}
 
       {/* 用户管理 */}
-      <section className="admin-section">
+      {adminMenu === "users" && <section className="admin-section">
         <h2>用户管理</h2>
         <Button type="primary" icon={<PlusOutlined />} onClick={openUserModal} style={{ marginBottom: 16 }}>
           新增用户
@@ -564,23 +641,23 @@ export default function AdminPage() {
           pagination={false}
           locale={{ emptyText: "暂无用户" }}
         />
-      </section>
+      </section>}
 
       {/* 新增用户弹窗 */}
       <Modal
-        title="新增用户"
+        title={editingUser ? "编辑用户" : "新增用户"}
         open={userModalOpen}
         onOk={handleCreateUser}
         onCancel={() => setUserModalOpen(false)}
         confirmLoading={savingUser}
-        okText="确认创建"
+        okText={editingUser ? "保存" : "确认创建"}
         cancelText="取消"
       >
         <Form form={userForm} layout="vertical" initialValues={{ role: "user" }}>
           <Form.Item name="username" label="用户名" rules={[{ required: true, message: "请输入用户名" }]}>
-            <Input />
+            <Input disabled={Boolean(editingUser)} />
           </Form.Item>
-          <Form.Item name="password" label="密码" rules={[{ required: true, message: "请输入密码" }]}>
+          <Form.Item name="password" label={editingUser ? "新密码（留空不修改）" : "密码"} rules={editingUser ? [] : [{ required: true, message: "请输入密码" }]}>
             <Input.Password />
           </Form.Item>
           <Form.Item name="display_name" label="姓名">
@@ -589,9 +666,18 @@ export default function AdminPage() {
           <Form.Item name="role" label="角色">
             <Select options={[{ value: "user", label: "普通用户" }, { value: "admin", label: "管理员" }]} />
           </Form.Item>
-          <Form.Item name="department" label="部门（选填）">
-            <Input />
+          <Form.Item name="department_id" label="部门（选填）">
+            <Select allowClear options={departments.filter((item) => item.is_active).map((item) => ({ value: item.id, label: item.name }))} />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title={editingDepartment ? "编辑部门" : "新建部门"} open={departmentModalOpen} onOk={saveDepartment} onCancel={() => setDepartmentModalOpen(false)}>
+        <Form form={departmentForm} layout="vertical">
+          <Form.Item name="name" label="部门名称" rules={[{ required: true, message: "请输入部门名称" }]}><Input /></Form.Item>
+          <Form.Item name="description" label="描述"><Input.TextArea rows={3} /></Form.Item>
+          <Form.Item name="agent_ids" label="可访问 Agent"><Select mode="multiple" options={agents.map((agent) => ({ value: agent.id, label: agent.name }))} placeholder="可选择多个 Agent" /></Form.Item>
+          <Form.Item name="is_active" label="状态"><Radio.Group options={[{ value: true, label: "启用" }, { value: false, label: "停用" }]} /></Form.Item>
         </Form>
       </Modal>
 

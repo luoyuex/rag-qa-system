@@ -95,6 +95,25 @@ export async function deleteUser(userId) {
   await request(`/api/admin/users/${userId}`, { method: "DELETE" });
 }
 
+export async function listDepartments() {
+  const res = await request("/api/admin/departments");
+  return res.json();
+}
+
+export async function createDepartment(payload) {
+  const res = await request("/api/admin/departments", { method: "POST", body: JSON.stringify(payload) });
+  return res.json();
+}
+
+export async function updateDepartment(id, payload) {
+  const res = await request(`/api/admin/departments/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  return res.json();
+}
+
+export async function deleteDepartment(id) {
+  await request(`/api/admin/departments/${id}`, { method: "DELETE" });
+}
+
 // ============================================================
 // 聊天
 // ============================================================

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentOut(BaseModel):
@@ -127,7 +127,7 @@ class UserOut(BaseModel):
     username: str
     display_name: Optional[str] = None
     role: str
-    department: Optional[str] = None
+    department_id: Optional[str] = None
     is_active: bool
     created_at: datetime
 
@@ -137,12 +137,30 @@ class UserCreateIn(BaseModel):
     password: str
     display_name: Optional[str] = None
     role: str = "user"
-    department: Optional[str] = None
+    department_id: Optional[str] = None
 
 
 class UserUpdateIn(BaseModel):
     password: Optional[str] = None  # 留空则不修改
     display_name: Optional[str] = None
     role: Optional[str] = None
-    department: Optional[str] = None
+    department_id: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class DepartmentIn(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+    agent_ids: List[str] = Field(default_factory=list)
+
+
+class DepartmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    name: str
+    description: Optional[str] = None
+    is_active: bool
+    agent_ids: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime

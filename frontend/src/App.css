@@ -331,6 +331,11 @@
   gap: 8px;
 }
 
+.agent-menu-item .ant-avatar {
+  background: #171717;
+  color: #fff;
+}
+
 .chat-input-bar .ant-input {
   flex: 1;
   resize: none;
@@ -366,6 +371,12 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.admin-menu {
+  border-radius: 8px;
+  padding: 0 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .admin-section {
