@@ -1,7 +1,7 @@
 import { Children, isValidElement, memo, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Input, Button, Avatar, Alert, Dropdown, Menu, Popconfirm, message } from "antd";
-import { CheckOutlined, CopyOutlined, PlusOutlined, SendOutlined, DeleteOutlined, UserOutlined, RobotOutlined } from "@ant-design/icons";
+import { CheckOutlined, CopyOutlined, DownOutlined, PlusOutlined, SendOutlined, DeleteOutlined, UserOutlined, RobotOutlined } from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -91,7 +91,10 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const messagesRef = useRef(null);
   const bottomRef = useRef(null);
+  const followOutputRef = useRef(true);
   const sessionsRequestRef = useRef(0);
   const creatingSessionRef = useRef(null);
 
@@ -108,8 +111,25 @@ export default function ChatPage() {
   }, [sessionId]);
 
   useEffect(() => {
+    if (followOutputRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: sending ? "auto" : "smooth" });
+    }
+  }, [messages, sending]);
+
+  function handleMessagesScroll() {
+    const container = messagesRef.current;
+    if (!container) return;
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isNearBottom = distanceToBottom < 80;
+    followOutputRef.current = isNearBottom;
+    setShowScrollToBottom((previous) => previous === !isNearBottom ? previous : !isNearBottom);
+  }
+
+  function scrollToBottom() {
+    followOutputRef.current = true;
+    setShowScrollToBottom(false);
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }
 
   async function refreshSessions() {
     const requestId = ++sessionsRequestRef.current;
@@ -177,6 +197,8 @@ export default function ChatPage() {
 
   async function loadMessages(id) {
     setError("");
+    followOutputRef.current = true;
+    setShowScrollToBottom(false);
     try {
       const history = await getMessages(id);
       setMessages(history.map((m) => ({ role: m.role, content: m.content })));
@@ -246,6 +268,8 @@ export default function ChatPage() {
     setError("");
     setInput("");
     setSending(true);
+    followOutputRef.current = true;
+    setShowScrollToBottom(false);
 
     setMessages((prev) => [
       ...prev,
@@ -326,7 +350,7 @@ export default function ChatPage() {
       </div>
 
       <div className="chat-main">
-        <div className="chat-messages">
+        <div className="chat-messages" ref={messagesRef} onScroll={handleMessagesScroll}>
           <div className="chat-messages-inner">
             {messages.map((m, i) => (
               <div key={i} className={`chat-row ${m.role}`}>
@@ -356,6 +380,18 @@ export default function ChatPage() {
             <div ref={bottomRef} />
           </div>
         </div>
+
+        {showScrollToBottom ? (
+          <button
+            type="button"
+            className="chat-scroll-bottom"
+            onClick={scrollToBottom}
+            aria-label="回到最新消息"
+            title="回到最新消息"
+          >
+            <DownOutlined />
+          </button>
+        ) : null}
 
         {error && <Alert type="error" message={error} showIcon className="chat-alert" />}
 
