@@ -99,9 +99,27 @@ export async function deleteUser(userId) {
 // 聊天
 // ============================================================
 
-export async function createSession() {
-  const res = await request("/api/chat/sessions", { method: "POST" });
+export async function listAgents() {
+  const res = await request("/api/agents", { cache: "no-store" });
   return res.json();
+}
+
+export async function createSession(agentId) {
+  const res = await request("/api/chat/sessions", {
+    method: "POST",
+    body: JSON.stringify({ agent_id: agentId }),
+  });
+  return res.json();
+}
+
+export async function listSessions(agentId) {
+  const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : "";
+  const res = await request(`/api/chat/sessions${query}`, { cache: "no-store" });
+  return res.json();
+}
+
+export async function deleteSession(sessionId) {
+  await request(`/api/chat/sessions/${sessionId}`, { method: "DELETE" });
 }
 
 export async function getMessages(sessionId) {
@@ -131,16 +149,17 @@ export async function sendMessageStream(sessionId, content, onChunk) {
 // 后台管理
 // ============================================================
 
-export async function listDocuments() {
-  const res = await request("/api/admin/documents");
+export async function listDocuments(knowledgeBaseId) {
+  const query = knowledgeBaseId ? `?knowledge_base_id=${encodeURIComponent(knowledgeBaseId)}` : "";
+  const res = await request(`/api/admin/documents${query}`);
   return res.json();
 }
 
-export async function uploadDocument(file) {
+export async function uploadDocument(file, knowledgeBaseId) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${API_BASE}/api/admin/documents`, {
+  const res = await fetch(`${API_BASE}/api/admin/documents?knowledge_base_id=${encodeURIComponent(knowledgeBaseId)}`, {
     method: "POST",
     body: formData,
     headers: authHeaders(),
@@ -162,6 +181,64 @@ export async function uploadDocument(file) {
 
 export async function deleteDocument(documentId) {
   await request(`/api/admin/documents/${documentId}`, { method: "DELETE" });
+}
+
+export async function listKnowledgeBases() {
+  const res = await request("/api/admin/knowledge-bases");
+  return res.json();
+}
+
+export async function createKnowledgeBase(payload) {
+  const res = await request("/api/admin/knowledge-bases", { method: "POST", body: JSON.stringify(payload) });
+  return res.json();
+}
+
+export async function updateKnowledgeBase(id, payload) {
+  const res = await request(`/api/admin/knowledge-bases/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  return res.json();
+}
+
+export async function deleteKnowledgeBase(id) {
+  await request(`/api/admin/knowledge-bases/${id}`, { method: "DELETE" });
+}
+
+export async function listAdminAgents() {
+  const res = await request("/api/admin/agents");
+  return res.json();
+}
+
+export async function createAgent(payload) {
+  const res = await request("/api/admin/agents", { method: "POST", body: JSON.stringify(payload) });
+  return res.json();
+}
+
+export async function updateAgent(id, payload) {
+  const res = await request(`/api/admin/agents/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  return res.json();
+}
+
+export async function deleteAgent(id) {
+  await request(`/api/admin/agents/${id}`, { method: "DELETE" });
+}
+
+export async function uploadAgentAvatar(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE}/api/admin/agent-avatar`, {
+    method: "POST",
+    body: formData,
+    headers: authHeaders(),
+  });
+  if (res.status === 401) {
+    clearToken();
+    if (onUnauthorized) onUnauthorized();
+    throw new Error("登录状态已失效，请重新登录");
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`头像上传失败：${text || res.statusText}`);
+  }
+  return res.json();
 }
 
 export async function getSettings() {

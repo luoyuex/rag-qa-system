@@ -65,6 +65,8 @@ export default function App() {
       : []),
   ];
 
+  const selectedMenuKey = location.pathname.startsWith("/chat") ? "/chat" : location.pathname;
+
   return (
     <Layout className="app-layout">
       {user && (
@@ -72,7 +74,7 @@ export default function App() {
           <Typography.Text strong className="app-title">知识库助手</Typography.Text>
           <Menu
             mode="horizontal"
-            selectedKeys={[location.pathname]}
+            selectedKeys={[selectedMenuKey]}
             items={menuItems}
             onClick={handleMenuClick}
             className="app-menu"
@@ -87,7 +89,7 @@ export default function App() {
         </Header>
       )}
 
-      <Content className="app-content">
+      <Content className={location.pathname.startsWith("/chat") ? "app-content-chat" : "app-content"}>
         <Routes>
           <Route
             path="/login"
@@ -97,6 +99,10 @@ export default function App() {
           />
           <Route
             path="/chat"
+            element={user ? <ChatPage /> : <Navigate to="/login" replace />}
+          />
+          <Route
+            path="/chat/:sessionId"
             element={user ? <ChatPage /> : <Navigate to="/login" replace />}
           />
           <Route

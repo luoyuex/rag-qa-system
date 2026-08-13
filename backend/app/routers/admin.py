@@ -1,18 +1,24 @@
+from pathlib import Path
 from typing import List
+import uuid
 
-from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app import config
 from app.auth import require_role
 from app.db import get_db, SessionLocal
-from app.models import Document, Setting
+from app.models import Agent, ChatSession, Document, KnowledgeBase, Setting
 from app.schemas import (
     DocumentOut,
     SettingsOut,
     SettingsUpdate,
     ModelSettingsOut,
     ModelSettingsUpdate,
+    AgentIn,
+    AgentOut,
+    KnowledgeBaseIn,
+    KnowledgeBaseOut,
 )
 from app.services import document_service
 
@@ -22,6 +28,29 @@ router = APIRouter(
     dependencies=[Depends(require_role("admin"))],
 )
 
+AVATAR_CONTENT_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+MAX_AVATAR_SIZE = 2 * 1024 * 1024
+
+
+@router.post("/agent-avatar")
+async def upload_agent_avatar(request: Request, file: UploadFile = File(...)):
+    extension = AVATAR_CONTENT_TYPES.get(file.content_type or "")
+    if extension is None:
+        raise HTTPException(400, "头像仅支持 JPG、PNG、WebP 或 GIF")
+    content = await file.read(MAX_AVATAR_SIZE + 1)
+    if len(content) > MAX_AVATAR_SIZE:
+        raise HTTPException(400, "头像大小不能超过 2MB")
+    filename = f"{uuid.uuid4().hex}{extension}"
+    avatar_dir = Path(config.AGENT_AVATAR_DIR)
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    (avatar_dir / filename).write_bytes(content)
+    return {"url": f"{str(request.base_url).rstrip('/')}/agent-avatars/{filename}"}
+
 
 # ============================================================
 # 上传文档
@@ -30,6 +59,7 @@ router = APIRouter(
 @router.post("/documents", response_model=DocumentOut)
 async def upload_document(
     background_tasks: BackgroundTasks,
+    knowledge_base_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
@@ -39,7 +69,11 @@ async def upload_document(
 
     content = await file.read()
 
-    document = document_service.create_document_record(db, file.filename)
+    knowledge_base = db.get(KnowledgeBase, knowledge_base_id)
+    if knowledge_base is None or not knowledge_base.is_active:
+        raise HTTPException(404, "知识库不存在或已停用")
+
+    document = document_service.create_document_record(db, file.filename, knowledge_base_id)
 
     saved_path = document_service.save_upload(
         content,
@@ -61,13 +95,98 @@ async def upload_document(
 # ============================================================
 
 @router.get("/documents", response_model=List[DocumentOut])
-def list_documents(db: Session = Depends(get_db)):
+def list_documents(knowledge_base_id: str = None, db: Session = Depends(get_db)):
 
-    return (
-        db.query(Document)
-        .order_by(Document.created_at.desc())
-        .all()
-    )
+    query = db.query(Document)
+    if knowledge_base_id:
+        query = query.filter(Document.knowledge_base_id == knowledge_base_id)
+    return query.order_by(Document.created_at.desc()).all()
+
+
+@router.get("/knowledge-bases", response_model=List[KnowledgeBaseOut])
+def list_knowledge_bases(db: Session = Depends(get_db)):
+    return db.query(KnowledgeBase).order_by(KnowledgeBase.created_at).all()
+
+
+@router.post("/knowledge-bases", response_model=KnowledgeBaseOut)
+def create_knowledge_base(payload: KnowledgeBaseIn, db: Session = Depends(get_db)):
+    if db.query(KnowledgeBase).filter(KnowledgeBase.name == payload.name.strip()).first():
+        raise HTTPException(400, "知识库名称已存在")
+    item = KnowledgeBase(**payload.model_dump())
+    item.name = item.name.strip()
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.put("/knowledge-bases/{knowledge_base_id}", response_model=KnowledgeBaseOut)
+def update_knowledge_base(knowledge_base_id: str, payload: KnowledgeBaseIn, db: Session = Depends(get_db)):
+    item = db.get(KnowledgeBase, knowledge_base_id)
+    if item is None:
+        raise HTTPException(404, "知识库不存在")
+    for key, value in payload.model_dump().items():
+        setattr(item, key, value)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/knowledge-bases/{knowledge_base_id}")
+def delete_knowledge_base(knowledge_base_id: str, db: Session = Depends(get_db)):
+    item = db.get(KnowledgeBase, knowledge_base_id)
+    if item is None:
+        raise HTTPException(404, "知识库不存在")
+    if item.documents or item.agents:
+        raise HTTPException(409, "请先删除该知识库下的文档和 Agent")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/agents", response_model=List[AgentOut])
+def list_admin_agents(db: Session = Depends(get_db)):
+    return db.query(Agent).order_by(Agent.created_at).all()
+
+
+@router.post("/agents", response_model=AgentOut)
+def create_agent(payload: AgentIn, db: Session = Depends(get_db)):
+    if db.get(KnowledgeBase, payload.knowledge_base_id) is None:
+        raise HTTPException(404, "知识库不存在")
+    if db.query(Agent).filter(Agent.name == payload.name.strip()).first():
+        raise HTTPException(400, "Agent 名称已存在")
+    item = Agent(**payload.model_dump())
+    item.name = item.name.strip()
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.put("/agents/{agent_id}", response_model=AgentOut)
+def update_agent(agent_id: str, payload: AgentIn, db: Session = Depends(get_db)):
+    item = db.get(Agent, agent_id)
+    if item is None:
+        raise HTTPException(404, "Agent 不存在")
+    if db.get(KnowledgeBase, payload.knowledge_base_id) is None:
+        raise HTTPException(404, "知识库不存在")
+    for key, value in payload.model_dump().items():
+        setattr(item, key, value)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/agents/{agent_id}")
+def delete_agent(agent_id: str, db: Session = Depends(get_db)):
+    item = db.get(Agent, agent_id)
+    if item is None:
+        raise HTTPException(404, "Agent 不存在")
+    if db.query(ChatSession).filter(ChatSession.agent_id == agent_id).first():
+        raise HTTPException(409, "该 Agent 已有历史会话，请改为停用")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
 
 
 # ============================================================

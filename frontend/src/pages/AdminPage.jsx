@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Table, Button, Upload, Tag, Popconfirm, InputNumber, Radio, Input,
+  Table, Button, Upload, Avatar, Tag, Popconfirm, InputNumber, Radio, Input,
   Modal, Form, Select, Alert, Space, message,
 } from "antd";
 import {
@@ -11,6 +11,9 @@ import {
   getSettings, updateSettings,
   getModelSettings, updateModelSettings,
   listUsers, createUser, updateUser, deleteUser,
+  listKnowledgeBases, createKnowledgeBase, updateKnowledgeBase, deleteKnowledgeBase,
+  listAdminAgents, createAgent, updateAgent, deleteAgent,
+  uploadAgentAvatar,
 } from "../api";
 
 const STATUS_TAG = {
@@ -37,6 +40,16 @@ export default function AdminPage() {
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
   const [userForm] = Form.useForm();
+  const [knowledgeBases, setKnowledgeBases] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
+  const [knowledgeBaseModalOpen, setKnowledgeBaseModalOpen] = useState(false);
+  const [agentModalOpen, setAgentModalOpen] = useState(false);
+  const [editingKnowledgeBase, setEditingKnowledgeBase] = useState(null);
+  const [editingAgent, setEditingAgent] = useState(null);
+  const [uploadingAgentAvatar, setUploadingAgentAvatar] = useState(false);
+  const [knowledgeBaseForm] = Form.useForm();
+  const [agentForm] = Form.useForm();
   const pollTimerRef = useRef(null);
 
   useEffect(() => {
@@ -44,6 +57,8 @@ export default function AdminPage() {
     refreshSettings();
     refreshModelSettings();
     refreshUsers();
+    refreshKnowledgeBases();
+    refreshAgents();
     return () => clearTimeout(pollTimerRef.current);
   }, []);
 
@@ -59,7 +74,7 @@ export default function AdminPage() {
 
   async function refreshDocuments() {
     try {
-      const docs = await listDocuments();
+      const docs = await listDocuments(selectedKnowledgeBaseId);
       setDocuments(docs);
     } catch (err) {
       setError(err.message);
@@ -70,7 +85,8 @@ export default function AdminPage() {
     setError("");
     setUploading(true);
     try {
-      await uploadDocument(file);
+      if (!selectedKnowledgeBaseId) throw new Error("请先选择知识库");
+      await uploadDocument(file, selectedKnowledgeBaseId);
       await refreshDocuments();
       message.success("文档上传成功，正在处理中");
     } catch (err) {
@@ -80,6 +96,72 @@ export default function AdminPage() {
       setUploading(false);
     }
     return false;
+  }
+
+  async function refreshKnowledgeBases() {
+    try {
+      const list = await listKnowledgeBases();
+      setKnowledgeBases(list);
+      setSelectedKnowledgeBaseId((current) => current || list[0]?.id || "");
+    } catch (err) { setError(err.message); }
+  }
+
+  async function refreshAgents() {
+    try { setAgents(await listAdminAgents()); } catch (err) { setError(err.message); }
+  }
+
+  useEffect(() => {
+    if (selectedKnowledgeBaseId) refreshDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKnowledgeBaseId]);
+
+  function openKnowledgeBaseModal(item = null) {
+    setEditingKnowledgeBase(item);
+    knowledgeBaseForm.setFieldsValue(item || { name: "", description: "", is_active: true });
+    setKnowledgeBaseModalOpen(true);
+  }
+
+  async function saveKnowledgeBase() {
+    try {
+      const values = await knowledgeBaseForm.validateFields();
+      if (editingKnowledgeBase) await updateKnowledgeBase(editingKnowledgeBase.id, values);
+      else await createKnowledgeBase(values);
+      setKnowledgeBaseModalOpen(false);
+      await refreshKnowledgeBases();
+      message.success("知识库已保存");
+    } catch (err) { if (!err.errorFields) message.error(err.message); }
+  }
+
+  function openAgentModal(item = null) {
+    setEditingAgent(item);
+    agentForm.setFieldsValue(item || { name: "", description: "", system_prompt: "", is_active: true });
+    setAgentModalOpen(true);
+  }
+
+  async function saveAgent() {
+    try {
+      const values = await agentForm.validateFields();
+      if (editingAgent) await updateAgent(editingAgent.id, values);
+      else await createAgent(values);
+      setAgentModalOpen(false);
+      await refreshAgents();
+      message.success("Agent 已保存");
+    } catch (err) { if (!err.errorFields) message.error(err.message); }
+  }
+
+  async function handleAgentAvatarUpload({ file, onSuccess, onError }) {
+    setUploadingAgentAvatar(true);
+    try {
+      const result = await uploadAgentAvatar(file);
+      agentForm.setFieldValue("avatar", result.url);
+      onSuccess(result);
+      message.success("头像上传成功");
+    } catch (err) {
+      onError(err);
+      message.error(err.message);
+    } finally {
+      setUploadingAgentAvatar(false);
+    }
   }
 
   async function handleDelete(id) {
@@ -296,9 +378,32 @@ export default function AdminPage() {
     <div className="admin-page">
       {error && <Alert type="error" message={error} showIcon closable onClose={() => setError("")} style={{ marginBottom: 16 }} />}
 
+      <section className="admin-section">
+        <h2>知识库管理</h2>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => openKnowledgeBaseModal()}>新建知识库</Button>
+        <Table dataSource={knowledgeBases} rowKey="id" pagination={false} style={{ marginTop: 16 }} columns={[
+          { title: "名称", dataIndex: "name" },
+          { title: "描述", dataIndex: "description", render: (value) => value || "-" },
+          { title: "状态", dataIndex: "is_active", render: (value) => <Tag color={value ? "green" : "default"}>{value ? "启用" : "停用"}</Tag> },
+          { title: "操作", render: (_, item) => <Space><Button size="small" onClick={() => openKnowledgeBaseModal(item)}>编辑</Button><Popconfirm title="确定删除该知识库吗？" onConfirm={async () => { await deleteKnowledgeBase(item.id); await refreshKnowledgeBases(); }}><Button danger size="small">删除</Button></Popconfirm></Space> },
+        ]} />
+      </section>
+
+      <section className="admin-section">
+        <h2>Agent 管理</h2>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => openAgentModal()}>新建 Agent</Button>
+        <Table dataSource={agents} rowKey="id" pagination={false} style={{ marginTop: 16 }} columns={[
+          { title: "名称", dataIndex: "name" },
+          { title: "知识库", dataIndex: "knowledge_base_id", render: (id) => knowledgeBases.find((item) => item.id === id)?.name || id },
+          { title: "状态", dataIndex: "is_active", render: (value) => <Tag color={value ? "green" : "default"}>{value ? "启用" : "停用"}</Tag> },
+          { title: "操作", render: (_, item) => <Space><Button size="small" onClick={() => openAgentModal(item)}>编辑</Button><Popconfirm title="确定删除该 Agent 吗？" onConfirm={async () => { await deleteAgent(item.id); await refreshAgents(); }}><Button danger size="small">删除</Button></Popconfirm></Space> },
+        ]} />
+      </section>
+
       {/* 文档管理 */}
       <section className="admin-section">
         <h2>文档管理</h2>
+        <Select value={selectedKnowledgeBaseId || undefined} placeholder="选择知识库" options={knowledgeBases.map((item) => ({ value: item.id, label: item.name }))} onChange={setSelectedKnowledgeBaseId} style={{ width: 240, marginRight: 12 }} />
         <Upload
           accept=".txt"
           showUploadList={false}
@@ -487,6 +592,44 @@ export default function AdminPage() {
           <Form.Item name="department" label="部门（选填）">
             <Input />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title={editingKnowledgeBase ? "编辑知识库" : "新建知识库"} open={knowledgeBaseModalOpen} onOk={saveKnowledgeBase} onCancel={() => setKnowledgeBaseModalOpen(false)}>
+        <Form form={knowledgeBaseForm} layout="vertical">
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}><Input /></Form.Item>
+          <Form.Item name="description" label="描述"><Input.TextArea rows={3} /></Form.Item>
+          <Form.Item name="is_active" label="状态"><Radio.Group options={[{ value: true, label: "启用" }, { value: false, label: "停用" }]} /></Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal title={editingAgent ? "编辑 Agent" : "新建 Agent"} open={agentModalOpen} onOk={saveAgent} onCancel={() => setAgentModalOpen(false)}>
+        <Form form={agentForm} layout="vertical">
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}><Input /></Form.Item>
+          <Form.Item name="description" label="描述"><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item name="knowledge_base_id" label="绑定知识库" rules={[{ required: true, message: "请选择知识库" }]}><Select options={knowledgeBases.map((item) => ({ value: item.id, label: item.name }))} /></Form.Item>
+          <Form.Item name="system_prompt" label="系统提示词" rules={[{ required: true, message: "请输入系统提示词" }]}><Input.TextArea rows={5} /></Form.Item>
+          <Form.Item label="头像">
+            <Space align="center">
+              <Form.Item name="avatar" noStyle>
+                <Input type="hidden" />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate={(previous, current) => previous.avatar !== current.avatar}>
+                {({ getFieldValue }) => (
+                  <Avatar size={48} src={getFieldValue("avatar") || undefined}>AI</Avatar>
+                )}
+              </Form.Item>
+              <Upload
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                showUploadList={false}
+                customRequest={handleAgentAvatarUpload}
+              >
+                <Button icon={<UploadOutlined />} loading={uploadingAgentAvatar}>上传头像</Button>
+              </Upload>
+              <span style={{ color: "#888", fontSize: 12 }}>JPG、PNG、WebP 或 GIF，最大 2MB</span>
+            </Space>
+          </Form.Item>
+          <Form.Item name="is_active" label="状态"><Radio.Group options={[{ value: true, label: "启用" }, { value: false, label: "停用" }]} /></Form.Item>
         </Form>
       </Modal>
     </div>

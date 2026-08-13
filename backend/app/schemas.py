@@ -8,6 +8,7 @@ class DocumentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    knowledge_base_id: str
     filename: str
     title: Optional[str] = None
     status: str
@@ -57,6 +58,9 @@ class ChatSessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    user_id: str
+    agent_id: str
+    title: Optional[str] = None
     created_at: datetime
 
 
@@ -71,6 +75,39 @@ class ChatMessageOut(BaseModel):
 
 class ChatMessageIn(BaseModel):
     content: str
+
+
+class ChatSessionIn(BaseModel):
+    agent_id: str
+
+
+class KnowledgeBaseIn(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class KnowledgeBaseOut(KnowledgeBaseIn):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentIn(BaseModel):
+    name: str
+    description: Optional[str] = None
+    avatar: Optional[str] = None
+    system_prompt: str
+    knowledge_base_id: str
+    is_active: bool = True
+
+
+class AgentOut(AgentIn):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class LoginIn(BaseModel):

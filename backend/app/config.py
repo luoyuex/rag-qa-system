@@ -5,7 +5,8 @@ import os
 # ============================================================
 
 MILVUS_URI = os.getenv("MILVUS_URI", "http://192.168.31.204:19530")
-MILVUS_COLLECTION = os.getenv("MILVUS_COLLECTION", "knowledge_base")
+MILVUS_COLLECTION = os.getenv("MILVUS_COLLECTION", "knowledge_base_v2")
+EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "768"))
 
 # ============================================================
 # MySQL
@@ -48,6 +49,7 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "120"))
 # ============================================================
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", str(os.path.join(os.path.dirname(__file__), "..", "uploads")))
+AGENT_AVATAR_DIR = os.getenv("AGENT_AVATAR_DIR", str(os.path.join(UPLOAD_DIR, "agent-avatars")))
 
 # ============================================================
 # 聊天上下文

@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -9,6 +10,12 @@ from app.services.embedding import get_embedding
 from app.services.milvus_client import client, COLLECTION_NAME
 
 BATCH_SIZE = 10
+
+
+def _milvus_primary_id(chunk_id: str) -> int:
+    """Milvus 快速创建的 Collection 使用必填 INT64 主键。"""
+    digest = hashlib.blake2b(chunk_id.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="big") & 0x7FFFFFFFFFFFFFFF
 
 
 # ============================================================
@@ -30,10 +37,11 @@ def save_upload(file_bytes: bytes, filename: str) -> Path:
 # 创建文档记录
 # ============================================================
 
-def create_document_record(db: Session, filename: str) -> Document:
+def create_document_record(db: Session, filename: str, knowledge_base_id: str) -> Document:
 
     document = Document(
         filename=filename,
+        knowledge_base_id=knowledge_base_id,
         title=filename,
         status=DocumentStatus.pending,
     )
@@ -49,7 +57,7 @@ def create_document_record(db: Session, filename: str) -> Document:
 # 批量写入 Milvus
 # ============================================================
 
-def _insert_batch(batch):
+def _insert_batch(batch, knowledge_base_id: str):
 
     data = []
 
@@ -58,7 +66,9 @@ def _insert_batch(batch):
         vector = get_embedding(chunk.text)
 
         data.append({
+            "id": _milvus_primary_id(chunk.chunk_id),
             "vector": vector,
+            "knowledge_base_id": knowledge_base_id,
             "text": chunk.text,
             "chunk_id": chunk.chunk_id,
             "document_id": chunk.document_id,
@@ -109,7 +119,7 @@ def process_document(document_id: str, file_path: Path, session_factory):
         for start in range(0, len(chunks), BATCH_SIZE):
 
             batch = chunks[start:start + BATCH_SIZE]
-            _insert_batch(batch)
+            _insert_batch(batch, document.knowledge_base_id)
 
         document.status = DocumentStatus.completed
         document.chunk_count = len(chunks)

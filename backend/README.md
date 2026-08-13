@@ -57,6 +57,7 @@ backend/
 | `EMBEDDING_MODEL` | 向量化模型（Ollama） | `embeddinggemma:300m` |
 | `CHAT_MODEL` | 本地对话模型（Ollama） | `deepseek-r1:1.5b` |
 | `DEFAULT_CHAT_PROVIDER` | 默认对话模式，`local` 或 `online` | `local` |
+| `EMBEDDING_DIMENSION` | Milvus 向量维度，必须与 Embedding 模型一致 | `768` |
 | `DEFAULT_ONLINE_BASE_URL` | 在线模式的 API 地址 | - |
 | `DEFAULT_ONLINE_API_KEY` | 在线模式的 API Key | - |
 | `DEFAULT_ONLINE_MODEL` | 在线模式使用的模型名 | - |
@@ -122,3 +123,11 @@ uvicorn app.main:app --reload
 ## 说明：根目录脚本
 
 项目根目录下的 `chunk.py`、`embedding.py`、`milvus.py`、`insert.py`、`search.py`、`chat.py` 为早期原型脚本（命令行方式验证分块、向量化、Milvus 检索、RAG 问答流程），与本 `backend` 服务相互独立、不被其引用，仅作为参考/历史留存，不建议在生产中使用。
+
+### Agent 与知识库
+
+- 后台可创建知识库，并向指定知识库上传文档。
+- 每个 Agent 绑定一个知识库，会话创建后固定绑定该 Agent。
+- Milvus Chunk 使用 `knowledge_base_id` 隔离，检索不会跨知识库。
+- 旧 MySQL 表在首次启动时会自动补充关联字段，并绑定到默认的“水果知识库 / 水果知识助手”。
+- 旧 Milvus 向量没有 `knowledge_base_id`，不会进入隔离检索结果；升级后需在后台将原始水果文档重新上传一次。确认新数据可正常检索后，再自行清理旧向量。

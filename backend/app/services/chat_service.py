@@ -1,3 +1,4 @@
+import re
 from typing import Generator, List
 
 import ollama
@@ -5,7 +6,7 @@ from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app import config
-from app.models import ChatMessage, Setting
+from app.models import Agent, ChatMessage, ChatSession, Setting
 from app.services.embedding import get_embedding
 from app.services.milvus_client import client, COLLECTION_NAME
 
@@ -55,7 +56,7 @@ def get_model_settings(db: Session) -> dict:
 # 检索 Milvus
 # ============================================================
 
-def search_milvus(question: str, limit: int = 5):
+def search_milvus(question: str, knowledge_base_id: str, limit: int = 5):
 
     vector = get_embedding(question)
 
@@ -63,6 +64,7 @@ def search_milvus(question: str, limit: int = 5):
         collection_name=COLLECTION_NAME,
         data=[vector],
         anns_field="vector",
+        filter=f'knowledge_base_id == "{knowledge_base_id}"',
         limit=limit,
         output_fields=["text"],
         search_params={"metric_type": "COSINE"},
@@ -73,7 +75,7 @@ def search_milvus(question: str, limit: int = 5):
 # 构造 Prompt
 # ============================================================
 
-def build_prompt(question: str, retrieved_context: str, history: List[ChatMessage]) -> str:
+def build_prompt(question: str, retrieved_context: str, history: List[ChatMessage], system_prompt: str) -> str:
 
     history_text = "\n".join(
         f"{'用户' if m.role == 'user' else 'AI'}：{m.content}"
@@ -81,6 +83,9 @@ def build_prompt(question: str, retrieved_context: str, history: List[ChatMessag
     )
 
     return f"""
+        【Agent 角色】
+        {system_prompt}
+
         你是一个智能助手。
 
         请根据知识库中的资料回答用户的问题，并结合历史对话保持上下文连贯。
@@ -156,6 +161,73 @@ def generate_answer(prompt: str, model_settings: dict) -> Generator[str, None, N
 
 
 # ============================================================
+# 根据首轮问答生成会话标题（仿 ChatGPT：只在第一轮触发一次）
+# ============================================================
+
+TITLE_PROMPT_TEMPLATE = """根据下面这段问答内容，生成一个不超过 12 个字的对话标题，用于在会话列表中展示。
+只输出标题本身，不要加标点、引号或任何解释。
+
+问：{question}
+答：{answer}
+"""
+
+
+def generate_title(question: str, answer: str, model_settings: dict) -> str:
+
+    prompt = TITLE_PROMPT_TEMPLATE.format(question=question[:200], answer=answer[:200])
+
+    # 部分模型（如 deepseek-r1、kimi-k2.5）是推理模型，
+    # 会先输出一大段思考过程再给出正文，且不少接口不支持关闭思考，
+    # 所以 token 预算必须留够思考 + 正文，否则思考没走完就被截断，正文会是空的
+    if model_settings["provider"] == "online":
+        online_client = OpenAI(
+            base_url=model_settings["online_base_url"],
+            api_key=model_settings["online_api_key"],
+        )
+        response = online_client.chat.completions.create(
+            model=model_settings["online_model"],
+            messages=[{"role": "user", "content": prompt}],
+            stream=False,
+            max_tokens=1536,
+        )
+        title = response.choices[0].message.content or ""
+    else:
+        response = ollama.chat(
+            model=model_settings["local_model"],
+            messages=[{"role": "user", "content": prompt}],
+            stream=False,
+            options={"num_predict": 1536},
+        )
+        title = response["message"]["content"] or ""
+
+    # 去掉推理模型可能夹带的 <think>...</think> 思考块
+    title = re.sub(r"<think>.*?</think>", "", title, flags=re.DOTALL)
+
+    return title.strip().strip("\"'“”‘’").splitlines()[0][:64] if title.strip() else ""
+
+
+def _generate_and_save_title(session_factory, session_id: str, question: str, answer: str, model_settings: dict):
+    """在 BackgroundTasks 里跑，标题生成较慢（推理模型思考耗时），
+    与流式回答的响应解耦，不阻塞前端拿到完整回答。"""
+
+    db = session_factory()
+
+    try:
+        title = generate_title(question, answer, model_settings)
+
+        if title:
+            session = db.get(ChatSession, session_id)
+            if session is not None:
+                session.title = title
+                db.commit()
+    except Exception as e:
+        # 标题生成失败不影响主流程，前端会 fallback 到时间展示
+        print(f"[chat_service] 生成会话标题失败：{e}")
+    finally:
+        db.close()
+
+
+# ============================================================
 # 流式生成回答
 #
 # 使用独立的 db session（session_factory），因为 StreamingResponse
@@ -171,6 +243,11 @@ def stream_answer(session_factory, session_id: str, question: str) -> Generator[
         rounds = get_context_rounds(db)
         model_settings = get_model_settings(db)
 
+        session = db.get(ChatSession, session_id)
+        agent = db.get(Agent, session.agent_id) if session else None
+        if agent is None:
+            raise ValueError("会话未绑定有效 Agent")
+
         history = (
             db.query(ChatMessage)
             .filter(ChatMessage.session_id == session_id)
@@ -180,7 +257,7 @@ def stream_answer(session_factory, session_id: str, question: str) -> Generator[
         )
         history.reverse()
 
-        results = search_milvus(question)
+        results = search_milvus(question, agent.knowledge_base_id)
 
         context_list = []
 
@@ -196,7 +273,13 @@ def stream_answer(session_factory, session_id: str, question: str) -> Generator[
 
         retrieved_context = "\n\n".join(context_list)
 
-        prompt = build_prompt(question, retrieved_context, history)
+        prompt = build_prompt(question, retrieved_context, history, agent.system_prompt)
+
+        is_first_round = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .count()
+        ) == 0
 
         user_message = ChatMessage(session_id=session_id, role="user", content=question)
         db.add(user_message)
@@ -216,6 +299,17 @@ def stream_answer(session_factory, session_id: str, question: str) -> Generator[
         assistant_message = ChatMessage(session_id=session_id, role="assistant", content=full_answer)
         db.add(assistant_message)
         db.commit()
+
+        if is_first_round:
+            try:
+                title = generate_title(question, full_answer, model_settings)
+                if title:
+                    session = db.get(ChatSession, session_id)
+                    session.title = title
+                    db.commit()
+            except Exception as e:
+                # 标题生成失败不影响主流程，前端会 fallback 到时间展示
+                print(f"[chat_service] 生成会话标题失败：{e}")
 
     finally:
         db.close()
