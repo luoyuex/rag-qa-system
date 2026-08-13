@@ -21,6 +21,18 @@ def _ensure_legacy_columns():
         document_columns = {column["name"] for column in inspector.get_columns("documents")}
         if "knowledge_base_id" not in document_columns:
             connection.execute(text("ALTER TABLE documents ADD COLUMN knowledge_base_id VARCHAR(36) NULL"))
+        document_column_types = {
+            "content_type": "VARCHAR(32) NULL",
+            "file_extension": "VARCHAR(32) NULL",
+            "mime_type": "VARCHAR(127) NULL",
+            "file_size": "INTEGER NULL",
+            "parser_name": "VARCHAR(64) NULL",
+        }
+        for column_name, column_type in document_column_types.items():
+            if column_name not in document_columns:
+                connection.execute(text(
+                    f"ALTER TABLE documents ADD COLUMN {column_name} {column_type}"
+                ))
         session_columns = {column["name"] for column in inspector.get_columns("chat_sessions")}
         if "agent_id" not in session_columns:
             connection.execute(text("ALTER TABLE chat_sessions ADD COLUMN agent_id VARCHAR(36) NULL"))

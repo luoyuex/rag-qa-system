@@ -1,6 +1,6 @@
 # 智能问答系统 - 后端
 
-基于 FastAPI + RAG（检索增强生成）的智能问答系统后端服务。系统本身与具体领域无关，可通过后台上传任意 `.txt` 知识文档来构建知识库，从而支持任意主题的问答（项目中的示例数据以水果为主题，仅用于演示）。
+基于 FastAPI + RAG（检索增强生成）的智能问答系统后端服务。系统本身与具体领域无关，可通过后台上传文本、Word、PDF 和源代码文件来构建知识库，从而支持任意主题的问答。
 
 ## 技术栈
 
@@ -64,6 +64,7 @@ backend/
 | `CHUNK_SIZE` | 文档分块大小 | `800` |
 | `CHUNK_OVERLAP` | 分块重叠长度 | `120` |
 | `UPLOAD_DIR` | 上传文件存储目录 | `uploads/` |
+| `MAX_DOCUMENT_SIZE` | 单个上传文件的最大字节数 | `26214400`（25MB） |
 | `DEFAULT_CONTEXT_ROUNDS` | 默认携带的历史对话轮数 | `5` |
 | `JWT_SECRET` | JWT 签名密钥，生产环境必须修改 | `change-me-in-production` |
 | `JWT_EXPIRE_MINUTES` | JWT 有效期（分钟） | `480` |
@@ -114,7 +115,7 @@ uvicorn app.main:app --reload
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/admin/documents` | 上传 `.txt` 文档，后台异步完成分块、向量化并写入 Milvus |
+| POST | `/api/admin/documents` | 上传文本、DOCX、文本型 PDF 或源代码，后台异步解析、分块、向量化并写入 Milvus |
 | GET | `/api/admin/documents` | 获取已上传文档列表及处理状态 |
 | DELETE | `/api/admin/documents/{doc_id}` | 删除文档（同时清理 Milvus 中对应向量与 MySQL 记录） |
 | GET / PUT | `/api/admin/settings` | 获取 / 修改问答时携带的历史上下文轮数 |
@@ -131,3 +132,11 @@ uvicorn app.main:app --reload
 - Milvus Chunk 使用 `knowledge_base_id` 隔离，检索不会跨知识库。
 - 旧 MySQL 表在首次启动时会自动补充关联字段，并绑定到默认的“水果知识库 / 水果知识助手”。
 - 旧 Milvus 向量没有 `knowledge_base_id`，不会进入隔离检索结果；升级后需在后台将原始水果文档重新上传一次。确认新数据可正常检索后，再自行清理旧向量。
+
+### 文档解析
+
+- TXT/Markdown 按标题和自然段切分，并支持 UTF-8、UTF-8 BOM 和 GB18030。
+- DOCX 保留标题层级、段落与表格结构。
+- 文本型 PDF 保留页码与版面坐标；扫描型 PDF 当前需要先经过 OCR 转为可检索文本。
+- Python 优先按顶层类和函数切分，其他源码按完整语义块和长度兜底切分。
+- 每个向量块会携带文件名、内容类型、章节、页码、编程语言和符号名等可用元数据。

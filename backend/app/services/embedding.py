@@ -43,11 +43,16 @@ def get_embedding(text: str) -> list[float]:
 
 
 def _get_embedding_local(text: str, settings: dict) -> list[float]:
-    response = ollama.embeddings(
-        model=settings["model"],
-        prompt=text,
-    )
-    return response["embedding"]
+    try:
+        # 新版 Ollama 使用 /api/embed；旧的 /api/embeddings 已逐步废弃。
+        response = ollama.embed(model=settings["model"], input=text)
+        return response["embeddings"][0]
+    except Exception as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        raise RuntimeError(
+            f"本地 Embedding 服务不可用（模型：{settings['model']}）：{detail}。"
+            "请确认 Ollama 已启动且该模型可以正常加载"
+        ) from exc
 
 
 def _get_embedding_online(text: str, settings: dict) -> list[float]:

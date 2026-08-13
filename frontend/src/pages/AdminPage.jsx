@@ -482,7 +482,7 @@ export default function AdminPage() {
         <h2>文档管理</h2>
         <Select value={selectedKnowledgeBaseId || undefined} placeholder="选择知识库" options={knowledgeBases.map((item) => ({ value: item.id, label: item.name }))} onChange={setSelectedKnowledgeBaseId} style={{ width: 240, marginRight: 12 }} />
         <Upload
-          accept=".txt"
+          accept=".txt,.md,.docx,.pdf,.py,.js,.jsx,.ts,.tsx,.java,.go,.rs,.c,.h,.cpp,.hpp,.cs,.php,.vue,.svelte,.sql,.html,.css,.scss,.json,.yaml,.yml,.toml"
           showUploadList={false}
           customRequest={({ file, onSuccess }) => {
             handleUpload({ file }).then(() => onSuccess());
@@ -497,7 +497,7 @@ export default function AdminPage() {
           size="small"
           style={{ marginTop: 16 }}
           pagination={false}
-          locale={{ emptyText: "暂无文档，先上传一个 .txt 文件" }}
+          locale={{ emptyText: "暂无文档，可上传文本、Word、PDF 或源代码文件" }}
         />
       </section>}
 

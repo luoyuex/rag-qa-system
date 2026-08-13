@@ -71,6 +71,15 @@ def create_session(payload: ChatSessionIn, user: User = Depends(get_current_user
 
 
 # ============================================================
+# 获取单个会话（用于刷新页面时恢复其所属 Agent）
+# ============================================================
+
+@router.get("/sessions/{session_id}", response_model=ChatSessionOut)
+def get_session(session_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _get_user_session(db, session_id, user)
+
+
+# ============================================================
 # 删除会话
 # ============================================================
 
@@ -112,6 +121,11 @@ def send_message(session_id: str, payload: ChatMessageIn, user: User = Depends(g
     _get_user_session(db, session_id, user)
 
     def event_stream():
-        yield from chat_service.stream_answer(SessionLocal, session_id, payload.content)
+        try:
+            yield from chat_service.stream_answer(SessionLocal, session_id, payload.content)
+        except Exception as exc:
+            # StreamingResponse 已发送响应头后不能再返回 JSON 错误，转为可读文本。
+            detail = str(exc).strip() or exc.__class__.__name__
+            yield f"[处理消息失败：{detail}]"
 
     return StreamingResponse(event_stream(), media_type="text/plain; charset=utf-8")

@@ -137,6 +137,11 @@ export async function listSessions(agentId) {
   return res.json();
 }
 
+export async function getSession(sessionId) {
+  const res = await request(`/api/chat/sessions/${sessionId}`, { cache: "no-store" });
+  return res.json();
+}
+
 export async function deleteSession(sessionId) {
   await request(`/api/chat/sessions/${sessionId}`, { method: "DELETE" });
 }

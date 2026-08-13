@@ -11,6 +11,11 @@ class DocumentOut(BaseModel):
     knowledge_base_id: str
     filename: str
     title: Optional[str] = None
+    content_type: Optional[str] = None
+    file_extension: Optional[str] = None
+    mime_type: Optional[str] = None
+    file_size: Optional[int] = None
+    parser_name: Optional[str] = None
     status: str
     chunk_count: int
     error_message: Optional[str] = None

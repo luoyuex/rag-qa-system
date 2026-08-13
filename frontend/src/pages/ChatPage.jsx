@@ -1,8 +1,84 @@
-import { useEffect, useRef, useState } from "react";
+import { Children, isValidElement, memo, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Input, Button, Avatar, Alert, Dropdown, Menu, Popconfirm, message } from "antd";
-import { PlusOutlined, SendOutlined, DeleteOutlined, UserOutlined, RobotOutlined } from "@ant-design/icons";
-import { createSession, deleteSession, getMessages, listAgents, listSessions, sendMessageStream } from "../api";
+import { CheckOutlined, CopyOutlined, PlusOutlined, SendOutlined, DeleteOutlined, UserOutlined, RobotOutlined } from "@ant-design/icons";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github-dark.css";
+import { createSession, deleteSession, getMessages, getSession, listAgents, listSessions, sendMessageStream } from "../api";
+
+const AGENT_STORAGE_KEY = "rag_selected_agent_id";
+
+function getTextContent(value) {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map(getTextContent).join("");
+  if (isValidElement(value)) return getTextContent(value.props.children);
+  return "";
+}
+
+const CodeBlock = memo(function CodeBlock({ children }) {
+  const child = Children.only(children);
+  const className = isValidElement(child) ? child.props.className || "" : "";
+  const match = /language-([\w+-]+)/.exec(className);
+  const language = match?.[1] || "text";
+  const code = getTextContent(child).replace(/\n$/, "");
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = code;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const succeeded = document.execCommand("copy");
+        textarea.remove();
+        if (!succeeded) throw new Error("copy failed");
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      message.error("复制失败，请手动选择代码复制");
+    }
+  }
+
+  return (
+    <div className="code-block">
+      <div className="code-block-header">
+        <span className="code-block-language">{language}</span>
+        <button type="button" className="code-copy-button" onClick={handleCopy}>
+          {copied ? <CheckOutlined /> : <CopyOutlined />}
+          <span>{copied ? "已复制" : "复制代码"}</span>
+        </button>
+      </div>
+      <pre>{child}</pre>
+    </div>
+  );
+});
+
+const MarkdownMessage = memo(function MarkdownMessage({ content }) {
+  return (
+    <div className="markdown-body">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={{
+          pre: CodeBlock,
+          a: ({ children, ...props }) => (
+            <a {...props} target="_blank" rel="noreferrer">{children}</a>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+});
 
 export default function ChatPage() {
   const { sessionId } = useParams();
@@ -17,17 +93,16 @@ export default function ChatPage() {
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
   const sessionsRequestRef = useRef(0);
+  const creatingSessionRef = useRef(null);
 
   useEffect(() => {
     initAgents();
+    // Agent 只在页面初始化时恢复；后续路由变化由 agentId/sessionId effect 处理。
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!sessionId) {
-      // 没有指定会话：有历史会话就打开最新的，否则新建一个
-      initWithoutSessionId();
-      return;
-    }
+    if (!sessionId) return;
     loadMessages(sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -56,7 +131,30 @@ export default function ChatPage() {
     try {
       const list = await listAgents();
       setAgents(list);
-      if (list.length > 0) setAgentId(list[0].id);
+      if (list.length === 0) return;
+
+      let nextAgentId = "";
+      if (sessionId) {
+        try {
+          const session = await getSession(sessionId);
+          if (list.some((agent) => agent.id === session.agent_id)) {
+            nextAgentId = session.agent_id;
+          }
+        } catch {
+          // 会话失效时交给后续会话列表逻辑选择可用会话。
+        }
+      }
+
+      if (!nextAgentId) {
+        const savedAgentId = localStorage.getItem(AGENT_STORAGE_KEY);
+        if (list.some((agent) => agent.id === savedAgentId)) {
+          nextAgentId = savedAgentId;
+        }
+      }
+
+      nextAgentId ||= list[0].id;
+      localStorage.setItem(AGENT_STORAGE_KEY, nextAgentId);
+      setAgentId(nextAgentId);
     } catch (err) {
       setError(err.message);
     }
@@ -64,25 +162,18 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!agentId) return;
-    refreshSessions().then((list) => {
+    refreshSessions().then(async (list) => {
       if (!sessionId || !list.some((item) => item.id === sessionId)) {
-        navigate(list.length ? `/chat/${list[0].id}` : "/chat", { replace: true });
-        if (!list.length) setMessages([]);
+        if (list.length) {
+          navigate(`/chat/${list[0].id}`, { replace: true });
+        } else {
+          setMessages([]);
+          await createAndOpenSession(true);
+        }
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId]);
-
-  async function initWithoutSessionId() {
-    const list = await refreshSessions();
-
-    if (list.length > 0) {
-      navigate(`/chat/${list[0].id}`, { replace: true });
-      return;
-    }
-
-    await handleNewSession();
-  }
 
   async function loadMessages(id) {
     setError("");
@@ -95,15 +186,33 @@ export default function ChatPage() {
     }
   }
 
-  async function handleNewSession() {
+  async function createAndOpenSession(replace = false) {
     try {
-      if (!agentId) return;
-      const session = await createSession(agentId);
-      await refreshSessions();
-      navigate(`/chat/${session.id}`);
+      if (!agentId) return null;
+      if (!creatingSessionRef.current || creatingSessionRef.current.agentId !== agentId) {
+        creatingSessionRef.current = {
+          agentId,
+          promise: createSession(agentId),
+        };
+      }
+      const session = await creatingSessionRef.current.promise;
+      setSessions((previous) => previous.some((item) => item.id === session.id)
+        ? previous
+        : [session, ...previous]);
+      navigate(`/chat/${session.id}`, { replace });
+      return session.id;
     } catch (err) {
       setError(err.message);
+      return null;
+    } finally {
+      if (creatingSessionRef.current?.agentId === agentId) {
+        creatingSessionRef.current = null;
+      }
     }
+  }
+
+  async function handleNewSession() {
+    await createAndOpenSession();
   }
 
   async function handleDeleteSession(id, e) {
@@ -129,7 +238,10 @@ export default function ChatPage() {
 
   async function handleSend() {
     const question = input.trim();
-    if (!question || sending || !sessionId) return;
+    if (!question || sending || !agentId) return;
+
+    const activeSessionId = sessionId || await createAndOpenSession(true);
+    if (!activeSessionId) return;
 
     setError("");
     setInput("");
@@ -142,7 +254,7 @@ export default function ChatPage() {
     ]);
 
     try {
-      await sendMessageStream(sessionId, question, (chunk) => {
+      await sendMessageStream(activeSessionId, question, (chunk) => {
         setMessages((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
@@ -190,7 +302,10 @@ export default function ChatPage() {
         </span>
       ),
     })),
-    onClick: ({ key }) => setAgentId(key),
+    onClick: ({ key }) => {
+      localStorage.setItem(AGENT_STORAGE_KEY, key);
+      setAgentId(key);
+    },
   };
 
   return (
@@ -223,7 +338,11 @@ export default function ChatPage() {
                   />
                 )}
                 <div className={`chat-content ${m.role}`}>
-                  {m.content || (sending && i === messages.length - 1 ? (
+                  {m.content ? (
+                    m.role === "assistant"
+                      ? <MarkdownMessage content={m.content} />
+                      : m.content
+                  ) : (sending && i === messages.length - 1 ? (
                     <span className="chat-typing">
                       <span></span><span></span><span></span>
                     </span>
@@ -269,7 +388,7 @@ export default function ChatPage() {
               shape="circle"
               icon={<SendOutlined />}
               onClick={handleSend}
-              disabled={sending || !input.trim()}
+              disabled={sending || !agentId || !input.trim()}
               loading={sending}
               className="chat-send-btn"
             />

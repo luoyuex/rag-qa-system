@@ -257,7 +257,24 @@ def stream_answer(session_factory, session_id: str, question: str) -> Generator[
         )
         history.reverse()
 
-        results = search_milvus(question, agent.knowledge_base_id)
+        is_first_round = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .count()
+        ) == 0
+
+        user_message = ChatMessage(session_id=session_id, role="user", content=question)
+        db.add(user_message)
+        db.commit()
+
+        try:
+            results = search_milvus(question, agent.knowledge_base_id)
+        except Exception as e:
+            error_text = f"[知识库检索失败：{e}]"
+            db.add(ChatMessage(session_id=session_id, role="assistant", content=error_text))
+            db.commit()
+            yield error_text
+            return
 
         context_list = []
 
@@ -274,16 +291,6 @@ def stream_answer(session_factory, session_id: str, question: str) -> Generator[
         retrieved_context = "\n\n".join(context_list)
 
         prompt = build_prompt(question, retrieved_context, history, agent.system_prompt)
-
-        is_first_round = (
-            db.query(ChatMessage)
-            .filter(ChatMessage.session_id == session_id)
-            .count()
-        ) == 0
-
-        user_message = ChatMessage(session_id=session_id, role="user", content=question)
-        db.add(user_message)
-        db.commit()
 
         full_answer = ""
 

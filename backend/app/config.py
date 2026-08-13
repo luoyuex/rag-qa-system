@@ -50,6 +50,7 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "120"))
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", str(os.path.join(os.path.dirname(__file__), "..", "uploads")))
 AGENT_AVATAR_DIR = os.getenv("AGENT_AVATAR_DIR", str(os.path.join(UPLOAD_DIR, "agent-avatars")))
+MAX_DOCUMENT_SIZE = int(os.getenv("MAX_DOCUMENT_SIZE", str(25 * 1024 * 1024)))
 
 # ============================================================
 # 聊天上下文

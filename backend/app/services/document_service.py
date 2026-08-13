@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.models import Document, DocumentStatus
-from app.services.chunker import create_chunks
 from app.services.embedding import get_embedding
+from app.services.ingestion import ingest_file
 from app.services.milvus_client import client, COLLECTION_NAME
 
 BATCH_SIZE = 10
@@ -37,12 +37,21 @@ def save_upload(file_bytes: bytes, filename: str) -> Path:
 # 创建文档记录
 # ============================================================
 
-def create_document_record(db: Session, filename: str, knowledge_base_id: str) -> Document:
+def create_document_record(
+    db: Session,
+    filename: str,
+    knowledge_base_id: str,
+    mime_type: str | None = None,
+    file_size: int | None = None,
+) -> Document:
 
     document = Document(
         filename=filename,
         knowledge_base_id=knowledge_base_id,
         title=filename,
+        file_extension=Path(filename).suffix.lower(),
+        mime_type=mime_type,
+        file_size=file_size,
         status=DocumentStatus.pending,
     )
 
@@ -57,7 +66,7 @@ def create_document_record(db: Session, filename: str, knowledge_base_id: str) -
 # 批量写入 Milvus
 # ============================================================
 
-def _insert_batch(batch, knowledge_base_id: str):
+def _insert_batch(batch, knowledge_base_id: str, filename: str):
 
     data = []
 
@@ -75,6 +84,8 @@ def _insert_batch(batch, knowledge_base_id: str):
             "title": chunk.title,
             "section": chunk.section,
             "chunk_index": chunk.chunk_index,
+            "filename": filename,
+            **chunk.metadata,
         })
 
     client.insert(
@@ -104,14 +115,21 @@ def process_document(document_id: str, file_path: Path, session_factory):
         document.status = DocumentStatus.chunking
         db.commit()
 
-        text = file_path.read_text(encoding="utf-8")
-
-        chunks = create_chunks(
-            text=text,
-            document_id=document_id,
-            chunk_size=config.CHUNK_SIZE,
-            overlap=config.CHUNK_OVERLAP,
+        parsed, chunks = ingest_file(
+            file_path,
+            document.filename,
+            config.CHUNK_SIZE,
+            config.CHUNK_OVERLAP,
         )
+        document.content_type = parsed.content_type
+        document.parser_name = parsed.parser_name
+        document.file_extension = parsed.metadata.get("file_extension")
+        db.commit()
+
+        for index, chunk in enumerate(chunks):
+            chunk.chunk_id = f"{document_id}_{index}"
+            chunk.document_id = document_id
+            chunk.chunk_index = index
 
         document.status = DocumentStatus.embedding
         db.commit()
@@ -119,7 +137,7 @@ def process_document(document_id: str, file_path: Path, session_factory):
         for start in range(0, len(chunks), BATCH_SIZE):
 
             batch = chunks[start:start + BATCH_SIZE]
-            _insert_batch(batch, document.knowledge_base_id)
+            _insert_batch(batch, document.knowledge_base_id, document.filename)
 
         document.status = DocumentStatus.completed
         document.chunk_count = len(chunks)

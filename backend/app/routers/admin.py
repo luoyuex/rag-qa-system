@@ -21,6 +21,7 @@ from app.schemas import (
     KnowledgeBaseOut,
 )
 from app.services import document_service
+from app.services.ingestion import supported_extensions
 
 router = APIRouter(
     prefix="/api/admin",
@@ -64,20 +65,29 @@ async def upload_document(
     db: Session = Depends(get_db),
 ):
 
-    if not file.filename.endswith(".txt"):
-        raise HTTPException(400, "目前只支持 .txt 文档")
+    filename = Path(file.filename or "").name
+    extension = Path(filename).suffix.lower()
+    if extension not in supported_extensions():
+        allowed = ", ".join(sorted(supported_extensions()))
+        raise HTTPException(400, f"不支持的文件类型。当前支持：{allowed}")
 
-    content = await file.read()
+    content = await file.read(config.MAX_DOCUMENT_SIZE + 1)
+    if len(content) > config.MAX_DOCUMENT_SIZE:
+        raise HTTPException(400, "文档大小不能超过 25MB")
+    if not content:
+        raise HTTPException(400, "不能上传空文件")
 
     knowledge_base = db.get(KnowledgeBase, knowledge_base_id)
     if knowledge_base is None or not knowledge_base.is_active:
         raise HTTPException(404, "知识库不存在或已停用")
 
-    document = document_service.create_document_record(db, file.filename, knowledge_base_id)
+    document = document_service.create_document_record(
+        db, filename, knowledge_base_id, file.content_type, len(content)
+    )
 
     saved_path = document_service.save_upload(
         content,
-        f"{document.id}_{file.filename}",
+        f"{document.id}_{filename}",
     )
 
     background_tasks.add_task(
